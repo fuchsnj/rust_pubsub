@@ -9,7 +9,7 @@ use std::ops::Deref;
 #[cfg(test)]
 mod test;
 
-struct Subscription{
+pub struct Subscription{
 	pubsub: PubSub,
 	channel_id: String,
 	receiver: Receiver<String>,
@@ -37,11 +37,11 @@ struct InnerPubSub{
 	next_id: u64
 }
 #[derive(Clone)]
-struct PubSub{
+pub struct PubSub{
 	inner: Arc<Mutex<InnerPubSub>>
 }
 impl PubSub{
-	fn new() -> PubSub{
+	pub fn new() -> PubSub{
 		PubSub{
 			inner: Arc::new(Mutex::new(InnerPubSub{
 				channels: HashMap::new(),
@@ -49,7 +49,7 @@ impl PubSub{
 			}))
 		}
 	}
-	fn subscribe(&self, channel: &str) -> Subscription{
+	pub fn subscribe(&self, channel: &str) -> Subscription{
 		let mut data = self.inner.lock().unwrap();
 		//let mut inner: &mut InnerPubSub = &mut *lock_guard;
 		if !data.channels.contains_key(channel){
@@ -66,7 +66,7 @@ impl PubSub{
 			id: id
 		}
 	}
-	fn num_channels(&self) -> usize{
+	pub fn num_channels(&self) -> usize{
 		let data = self.inner.lock().unwrap();
 		data.channels.len()
 	}
