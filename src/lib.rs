@@ -1,23 +1,19 @@
-use std::collections::{HashMap,HashSet};
-use std::sync::{Arc,Mutex};
-use std::hash::{Hash,Hasher};
+#![feature(scoped)]
 
-#[test]
-fn it_works() {
-	let pubsub = PubSub::new();
-	let sub = pubsub.subscribe("test",|msg|{
-		println!("received msg:{}", msg);
-	});
-	pubsub.notify("test","message");
-	println!("canceling");
-	sub.cancel();
-	println!("cancelled");
-	panic!("fail tests");
-}
+use std::collections::HashMap;
+use std::sync::{Arc,Mutex};
+use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc;
+use std::ops::Deref;
+
+#[cfg(test)]
+mod test;
+
 struct Subscription{
 	pubsub: PubSub,
-	func_id: usize,
-	channel: String
+	channel_id: String,
+	receiver: Receiver<String>,
+	id: u64
 }
 impl Subscription{
 	pub fn cancel(self){}
@@ -27,9 +23,18 @@ impl Drop for Subscription{
 		self.pubsub.unregister(self);
 	}
 }
+impl Deref for Subscription{
+	type Target = Receiver<String>;
+	fn deref<'a>(&'a self) -> &'a Receiver<String>{
+		&self.receiver
+	}
+}
 
 struct InnerPubSub{
-	channels: HashMap<String, HashMap<usize, Box<FnMut(&str) + Send + 'static>>>
+	channels: HashMap<String, HashMap<u64, Sender<String>>>,
+
+	//id will stay unique for hundreds of years, even at ~1 billion/sec
+	next_id: u64
 }
 #[derive(Clone)]
 struct PubSub{
@@ -39,47 +44,50 @@ impl PubSub{
 	fn new() -> PubSub{
 		PubSub{
 			inner: Arc::new(Mutex::new(InnerPubSub{
-				channels: HashMap::new()
+				channels: HashMap::new(),
+				next_id: 0
 			}))
 		}
 	}
-	fn subscribe<F>(&self, channel: &str, func: F) -> Subscription
-	where F: FnMut(&str) + Send + 'static{
-		let mut lock_guard = self.inner.lock().unwrap();
-		let mut inner: &mut InnerPubSub = &mut *lock_guard;
-		if !inner.channels.contains_key(channel){
-			println!("creating new channel");
-			inner.channels.insert(channel.to_string(), HashMap::new());
+	fn subscribe(&self, channel: &str) -> Subscription{
+		let mut data = self.inner.lock().unwrap();
+		//let mut inner: &mut InnerPubSub = &mut *lock_guard;
+		if !data.channels.contains_key(channel){
+			data.channels.insert(channel.to_string(), HashMap::new());
 		}
-		let box_func = Box::new(func);
-		let func_id = (&box_func as *const _) as usize;
-		println!("registering id:{}", func_id);
-		inner.channels.get_mut(channel).unwrap().insert(func_id, box_func);
+		let id = data.next_id;
+		data.next_id += 1;
+		let (sender, receiver) = mpsc::channel();
+		data.channels.get_mut(channel).unwrap().insert(id, sender);
 		Subscription{
 			pubsub: self.clone(),
-			func_id: func_id,
-			channel: channel.to_string()
+			channel_id: channel.to_string(),
+			receiver: receiver,
+			id: id
 		}
+	}
+	fn num_channels(&self) -> usize{
+		let data = self.inner.lock().unwrap();
+		data.channels.len()
 	}
 	fn unregister(&self, sub: &Subscription){
 		let mut inner = self.inner.lock().unwrap();
 		let mut remove_channel = false;
 		{
-			let sub_list = inner.channels.get_mut(&sub.channel).unwrap();
-			sub_list.remove(&sub.func_id);
+			let sub_list = inner.channels.get_mut(&sub.channel_id).unwrap();
+			sub_list.remove(&sub.id);
 			if sub_list.len() == 0{
 				remove_channel = true;
 			}
 		}
 		if remove_channel{
-			println!("removing channel!");
-			inner.channels.remove(&sub.channel);
+			inner.channels.remove(&sub.channel_id);
 		}
 	}
 	pub fn notify(&self, channel: &str, msg: &str){
 		if let Some(subscriptions) = self.inner.lock().unwrap().channels.get_mut(channel){
-			for (id,func) in subscriptions{
-				func(msg);
+			for (_,sender) in subscriptions{
+				let _ = sender.send(msg.to_string());
 			}
 		}
 	}
