@@ -1,10 +1,9 @@
-#![feature(scoped)]
-
 use std::collections::HashMap;
 use std::sync::{Arc,Mutex};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::mpsc;
 use std::ops::Deref;
+use std::fmt::{Formatter, Error, Debug};
 
 #[cfg(test)]
 mod test;
@@ -15,6 +14,13 @@ pub struct Subscription{
 	receiver: Receiver<String>,
 	id: u64
 }
+
+impl Debug for Subscription{
+	fn fmt(&self, fmt: &mut Formatter) -> Result<(), Error>{
+		fmt.write_str(&format!("Sub(channel={})", self.channel_id))
+	}
+}
+
 impl Subscription{
 	pub fn cancel(self){}
 }
