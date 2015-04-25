@@ -57,6 +57,7 @@ pub struct PubSub{
 	inner: Arc<Mutex<InnerPubSub>>
 }
 unsafe impl Send for PubSub{}
+unsafe impl Sync for PubSub{}
 
 #[derive(Clone)]
 pub struct RAIIBool{
