@@ -27,6 +27,11 @@ impl Debug for Subscription{
 
 impl Subscription{
 	pub fn cancel(self){}
+	
+	pub fn activate<F>(&self, func: F) -> Result<(),()>
+	where F: FnMut(String) + 'static + Send{
+		self.pubsub.activate(&self.channel_id, self.id, func)	
+	}
 }
 impl Drop for Subscription{
 	fn drop(&mut self){
@@ -42,12 +47,11 @@ impl Drop for Subscription{
 struct SubData{
 	running: RAIIBool,
 	backlog: VecDeque<String>,
-	func: Arc<Mutex<Box<FnMut(String) + Send>>>
+	func: Option<Arc<Mutex<Box<FnMut(String) + Send>>>>
 }
 
 struct InnerPubSub{
 	channels: HashMap<String, HashMap<u64, SubData>>,
-
 	//id will stay unique for hundreds of years, even at ~1 billion/sec
 	next_id: u64,
 	thread_pool: Rc<ThreadPool>
@@ -122,8 +126,8 @@ impl PubSub{
 			}))
 		}
 	}
-	pub fn subscribe<F>(&self, channel: &str, func: F) -> Subscription
-	where F:FnMut(String) + 'static + Send{
+	fn internal_subscribe<F>(&self, channel: &str, func: Option<F>) -> Subscription
+	where F: FnMut(String) + 'static + Send{
 		let mut data = self.inner.lock().unwrap();
 		//let mut inner: &mut InnerPubSub = &mut *lock_guard;
 		if !data.channels.contains_key(channel){
@@ -135,7 +139,7 @@ impl PubSub{
 		let sub_data = SubData{
 			running: RAIIBool::new(false),
 			backlog: VecDeque::new(),
-			func: Arc::new(Mutex::new(Box::new(func)))
+			func: func.map(|f|Arc::new(Mutex::new(Box::new(f) as Box<_>)))
 		};
 		
 		let subscriptions = data.channels.get_mut(channel).unwrap();
@@ -145,6 +149,34 @@ impl PubSub{
 			channel_id: channel.to_string(),
 			id: id
 		}
+	}
+	pub fn subscribe<F>(&self, channel: &str, func: F) -> Subscription
+	where F: FnMut(String) + 'static + Send{
+		self.internal_subscribe(channel, Some(func))
+	}
+	pub fn lazy_subscribe(&self, channel: &str) -> Subscription{
+		let mut func = Some(|_|{});
+		func = None;
+		self.internal_subscribe(channel, func)
+	}
+	fn activate<F>(&self, channel: &str, id: u64, func: F) -> Result<(),()>
+	where F: FnMut(String) + 'static + Send{
+		let mut inner = self.inner.lock().unwrap();
+		let pool = inner.thread_pool.clone();
+		if let Some(subs) = inner.channels.get_mut(channel){
+			if let Some(sub_data) = subs.get_mut(&id){
+				match sub_data.func{
+					Some(_) => return Err(()),
+					None => {
+						sub_data.func = Some(Arc::new(Mutex::new(Box::new(func))));
+						
+						self.schedule_worker(sub_data, channel, id, &pool);
+						return Ok(())
+					}
+				}
+			}
+		}
+		Err(())
 	}
 	pub fn num_channels(&self) -> usize{
 		let data = self.inner.lock().unwrap();
@@ -164,71 +196,60 @@ impl PubSub{
 			inner.channels.remove(&sub.channel_id);
 		}
 	}
+	fn schedule_worker(&self, sub_data: &mut SubData, channel: &str, id: u64, pool: &Rc<ThreadPool>){
+		//println!("schedule worker: channel={}, id={}", channel, id);
+		if !sub_data.running.get(){
+			let thread_running = sub_data.running.clone();
+			
+
+			//println!("checking for func");
+			if let Some(func) = sub_data.func.clone(){
+				//println!("got func");
+				thread_running.set(true);
+				let pubsub = self.clone();
+				let channel = channel.to_string();
+				let id = id.clone();
+				pool.execute(move ||{	
+					use std::ops::DerefMut;
+					
+					let finish_guard = thread_running.new_guard(false);
+					let mut guard = func.lock().unwrap();
+					let mut func = guard.deref_mut();
+					let mut running = true;
+					while running{
+						//println!("working loop running");
+						let mut notification_message = None;
+						
+						{
+							let mut inner = pubsub.inner.lock().unwrap();
+							if let Some(subs) = inner.channels.get_mut(&channel){
+								if let Some(sub_data) = subs.get_mut(&id){
+									if let Some(msg) = sub_data.backlog.pop_front(){
+										notification_message = Some(msg);
+									}
+								}
+							}
+						}//unlock 'inner'
+						
+						if let Some(msg) = notification_message{
+							func(msg);
+						}else{
+							running = false;
+						}
+					}
+					finish_guard.done();
+				});
+			}
+		}
+	}
 	pub fn notify(&self, channel: &str, msg: &str){
 		let mut inner = self.inner.lock().unwrap();
 		let pool = inner.thread_pool.clone();
 		if let Some(subscriptions) = inner.channels.get_mut(channel){
 			for (id,sub_data) in subscriptions{
 				sub_data.backlog.push_back(msg.to_string());
-				if sub_data.running.get(){
-					println!("already running, nothing to do");
-				}else{
-					let thread_running = sub_data.running.clone();
-					thread_running.set(true);
-					
-					let func:Arc<Mutex<Box<FnMut(String) + Send>>> = sub_data.func.clone();
-					let pubsub = self.clone();
-					let channel = channel.to_string();
-					let id = id.clone();
-					pool.execute(move ||{	
-						use std::ops::DerefMut;
-						
-						let finish_guard = thread_running.new_guard(false);
-						println!("running on thread pool");
-						let mut guard = func.lock().unwrap();
-						let mut func = guard.deref_mut();
-						let mut running = true;
-						while running{
-							let mut notification_message = None;
-							
-							{
-								let mut inner = pubsub.inner.lock().unwrap();
-								if let Some(subs) = inner.channels.get_mut(&channel){
-									if let Some(sub_data) = subs.get_mut(&id){
-										println!("backlog_size:{}", sub_data.backlog.len());
-										if let Some(msg) = sub_data.backlog.pop_front(){
-											notification_message = Some(msg);
-										}
-									}
-								}
-							}//unlock 'inner'
-							
-							if let Some(msg) = notification_message{
-								func(msg);
-							}else{
-								running = false;
-							}
-						}
-						finish_guard.done();
-					});
-					println!("need to assign thread, none running");
-				}
-//				match subData.func.try_lock(){
-//					Ok(guard) => {
-//						println!("need to run immediately: channel= {}, data= {}", channel, msg);
-//						//let func = Arc::new(Mutex::new(guard));
-//						pool.execute(move || {
-//								
-//							println!("running in thread pool");
-//							guard(msg);	
-//						});
-//					},
-//					Err(_) => {
-//						println!("need to queue: channel= {}, data= {}", channel, msg);
-//					}
-//				}
-				
-				//let _ = sender.send(msg.to_string());
+
+				self.schedule_worker(sub_data, channel, *id, &pool);
 			}
 		}
 	}
