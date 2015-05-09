@@ -32,18 +32,19 @@ impl Subscription{
 	where F: FnMut(String) + 'static + Send{
 		self.pubsub.activate(&self.channel_id, self.id, func)	
 	}
+	
+	pub fn notify_others(&self, msg: &str){
+		self.pubsub.notify(&self.channel_id, msg, Some(self.id));
+	}
 }
 impl Drop for Subscription{
 	fn drop(&mut self){
+		println!("subscription dropping");
 		self.pubsub.unregister(self);
+		println!("subscription done dropping");
 	}
 }
-//impl Deref for Subscription{
-//	type Target = Receiver<String>;
-//	fn deref<'a>(&'a self) -> &'a Receiver<String>{
-//		&self.receiver
-//	}
-//}
+
 struct SubData{
 	running: RAIIBool,
 	backlog: VecDeque<String>,
@@ -128,6 +129,7 @@ impl PubSub{
 	}
 	fn internal_subscribe<F>(&self, channel: &str, func: Option<F>) -> Subscription
 	where F: FnMut(String) + 'static + Send{
+		
 		let mut data = self.inner.lock().unwrap();
 		//let mut inner: &mut InnerPubSub = &mut *lock_guard;
 		if !data.channels.contains_key(channel){
@@ -135,6 +137,8 @@ impl PubSub{
 		}
 		let id = data.next_id;
 		data.next_id += 1;
+		
+		println!("registering: channel = {}, id={}", channel, id);
 		
 		let sub_data = SubData{
 			running: RAIIBool::new(false),
@@ -183,6 +187,7 @@ impl PubSub{
 		data.channels.len()
 	}
 	fn unregister(&self, sub: &Subscription){
+		println!("unregistering: channel = {}, id={}", sub.channel_id, sub.id);
 		let mut inner = self.inner.lock().unwrap();
 		let mut remove_channel = false;
 		{
@@ -242,14 +247,15 @@ impl PubSub{
 			}
 		}
 	}
-	pub fn notify(&self, channel: &str, msg: &str){
+	pub fn notify(&self, channel: &str, msg: &str, exception: Option<u64>){
 		let mut inner = self.inner.lock().unwrap();
 		let pool = inner.thread_pool.clone();
 		if let Some(subscriptions) = inner.channels.get_mut(channel){
 			for (id,sub_data) in subscriptions{
-				sub_data.backlog.push_back(msg.to_string());
-
-				self.schedule_worker(sub_data, channel, *id, &pool);
+				if Some(*id) != exception{
+					sub_data.backlog.push_back(msg.to_string());
+					self.schedule_worker(sub_data, channel, *id, &pool);
+				}
 			}
 		}
 	}

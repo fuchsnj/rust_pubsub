@@ -29,11 +29,11 @@ fn basic_test() {
 			sleep_ms(1000);
 			*count2.lock().unwrap() += 1;
 		});
-		pubsub.notify("channel1", "data1");
-		pubsub.notify("channel1", "data2");
+		pubsub.notify("channel1", "data1", None);
+		pubsub.notify("channel1", "data2", None);
 		
-		pubsub.notify("channel2", "data3");
-		pubsub.notify("channel2", "data4");
+		pubsub.notify("channel2", "data3", None);
+		pubsub.notify("channel2", "data4", None);
 		
 		sleep_ms(500);
 		assert_eq!(*count.lock().unwrap(), 0);
@@ -51,18 +51,37 @@ fn basic_test() {
 fn lazy_subscribe(){
 	let pubsub = PubSub::new(5);
 	let count = Arc::new(Mutex::new(0));
-	{
-		let sub1 = pubsub.lazy_subscribe("channel1");
-		pubsub.notify("channel1", "data1");
-		
-		let count1 = count.clone();
-		sub1.activate(move |msg|{
-			assert!(msg == "data1");
-			*count1.lock().unwrap() += 1;
-		});
-		sleep_ms(500);
-		assert_eq!(*count.lock().unwrap(), 1);
-	}
+	
+	let sub1 = pubsub.lazy_subscribe("channel1");
+	pubsub.notify("channel1", "data1", None);
+	
+	let count1 = count.clone();
+	sub1.activate(move |msg|{
+		assert!(msg == "data1");
+		*count1.lock().unwrap() += 1;
+	});
+	sleep_ms(500);
+	assert_eq!(*count.lock().unwrap(), 1);
+}
+
+#[test]
+fn notify_exception() {
+	let pubsub = PubSub::new(5);
+	let count = Arc::new(Mutex::new(0));
+	
+	let count1 = count.clone();
+	let sub1 = pubsub.subscribe("channel1", move |msg|{
+		*count1.lock().unwrap() -= 1;
+	});
+	let count2 = count.clone();
+	let sub2 = pubsub.subscribe("channel1", move |msg|{
+		*count2.lock().unwrap() += 1;
+	});
+	
+	sub1.notify_others("data1");
+	
+	sleep_ms(500);
+	assert_eq!(*count.lock().unwrap(), 1);
 }
 
 
