@@ -66,7 +66,7 @@ unsafe impl Send for PubSub{}
 unsafe impl Sync for PubSub{}
 
 #[derive(Clone)]
-pub struct RAIIBool{
+struct RAIIBool{
 	value: Arc<Mutex<bool>>
 }
 impl RAIIBool{
@@ -86,7 +86,7 @@ impl RAIIBool{
 	}
 }
 
-pub struct RAIIBoolGuard{
+struct RAIIBoolGuard{
 	data: RAIIBool,
 	value: bool
 }
