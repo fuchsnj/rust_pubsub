@@ -9,12 +9,11 @@ http://fuchsnj.github.io/rust_pubsub
 
 ## Usage
 
-This will be uploaded to crates.io when it is more stable.
-For now, add the following to your `Cargo.toml`
+Add the following to your `Cargo.toml`
 
 ```toml
-[dependencies.pubsub]
-git = "https://github.com/fuchsnj/rust_pubsub.git"
+[dependencies]
+pubsub = "*"
 ```
 
 and this to your crate root:
