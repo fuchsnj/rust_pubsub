@@ -1,5 +1,6 @@
 Local publish/subscribe
 ====
+[![Build Status](https://travis-ci.org/fuchsnj/rust_pubsub.svg?branch=master)](https://travis-ci.org/fuchsnj/rust_pubsub)
 
 ## Documentation
 
