@@ -27,6 +27,7 @@ extern crate pubsub;
 ```rust
 	extern crate pubsub;
 	use pubsub::PubSub;
+	
 	//create pubsub with 5 threads. These threads run notification functions.
 	//messages are queued indefinitely until they can be run
 	let pubsub = PubSub::new(5);
