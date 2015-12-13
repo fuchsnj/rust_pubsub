@@ -75,11 +75,11 @@ impl RAIIBool{
 			value: Arc::new(Mutex::new(value))
 		}
 	}
-	fn get(&self) -> bool{
-		*self.value.lock().unwrap()
-	}
-	fn set(&self, value: bool){
-		*self.value.lock().unwrap() = value;
+	fn set(&self, value: bool) -> bool{
+		let mut guard = self.value.lock().unwrap();
+		let old:bool = *guard;
+		*guard = value;
+		old
 	}
 	fn new_guard(&self, value: bool) -> RAIIBoolGuard{
 		RAIIBoolGuard::new(self.clone(), value)
@@ -178,10 +178,9 @@ impl PubSub{
 		}
 	}
 	fn schedule_worker(&self, sub_data: &mut SubData, channel: &str, id: u64, pool: &Rc<ThreadPool>){
-		if !sub_data.running.get(){
+		if !sub_data.running.set(true){//if not currently running
 			let thread_running = sub_data.running.clone();
 			if let Some(func) = sub_data.func.clone(){
-				thread_running.set(true);
 				let pubsub = self.clone();
 				let channel = channel.to_string();
 				let id = id.clone();
@@ -212,6 +211,8 @@ impl PubSub{
 					}
 					finish_guard.done();
 				});
+			}else{
+				thread_running.set(false);
 			}
 		}
 	}
