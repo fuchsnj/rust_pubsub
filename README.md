@@ -4,9 +4,7 @@ Local publish/subscribe
 
 ## Documentation
 
-```
-cargo doc
-```
+http://fuchsnj.github.io/rust_pubsub
 
 ## Usage
 
