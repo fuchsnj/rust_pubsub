@@ -1,7 +1,8 @@
 Local publish/subscribe
 ====
 [![Build Status](https://travis-ci.org/fuchsnj/rust_pubsub.svg?branch=master)](https://travis-ci.org/fuchsnj/rust_pubsub)
-
+[![crates.io](https://img.shields.io/crates/v/pubsub.svg)](https://crates.io/crates/pubsub)
+[![MIT license](https://img.shields.io/crates/l/pubsub.svg)](./LICENSE)
 ## Documentation
 
 http://fuchsnj.github.io/rust_pubsub
