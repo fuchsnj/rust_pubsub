@@ -1,7 +1,4 @@
-#![feature(scoped)]
-
 extern crate threadpool;
-extern crate time;
 
 use threadpool::ThreadPool;
 use std::collections::HashMap;
@@ -26,12 +23,7 @@ impl Debug for Subscription{
 }
 
 impl Subscription{
-	pub fn cancel(self){}
-	
-	pub fn activate<F>(&self, func: F) -> Result<(),()>
-	where F: FnMut(String) + 'static + Send{
-		self.pubsub.activate(&self.channel_id, self.id, func)	
-	}
+	pub fn cancel(self){/* self is dropped */}
 	
 	pub fn notify_others(&self, msg: &str){
 		self.pubsub.notify(&self.channel_id, msg, Some(self.id));
@@ -39,9 +31,18 @@ impl Subscription{
 }
 impl Drop for Subscription{
 	fn drop(&mut self){
-		println!("subscription dropping");
 		self.pubsub.unregister(self);
-		println!("subscription done dropping");
+	}
+}
+
+pub struct SubActivator{
+	sub: Subscription
+}
+impl SubActivator{
+	pub fn activate<F>(self, func: F) -> Subscription
+	where F: FnMut(String) + 'static + Send{
+		self.sub.pubsub.activate(&self.sub.channel_id, self.sub.id, func);
+		self.sub
 	}
 }
 
@@ -85,7 +86,6 @@ impl RAIIBool{
 	}
 }
 
-
 pub struct RAIIBoolGuard{
 	data: RAIIBool,
 	value: bool
@@ -104,19 +104,7 @@ impl Drop for RAIIBoolGuard{
 		self.data.set(self.value);
 	}
 }
-//pub struct RAIIBool{
-//	value: Rc<Cell<bool>>
-//}
-//impl RAIIBool{
-//	fn new<F>(value: bool) -> RAIIBool{
-//		RAIIBool{
-//			value: Cell::new(value)
-//		}
-//	}
-//	fn get(setValue:bool, finalValue:bool) -> RAIIGuard{
-//		
-//	}
-//}
+
 impl PubSub{
 	pub fn new(num_threads: usize) -> PubSub{
 		PubSub{
@@ -129,17 +117,12 @@ impl PubSub{
 	}
 	fn internal_subscribe<F>(&self, channel: &str, func: Option<F>) -> Subscription
 	where F: FnMut(String) + 'static + Send{
-		
 		let mut data = self.inner.lock().unwrap();
-		//let mut inner: &mut InnerPubSub = &mut *lock_guard;
 		if !data.channels.contains_key(channel){
 			data.channels.insert(channel.to_string(), HashMap::new());
 		}
 		let id = data.next_id;
 		data.next_id += 1;
-		
-		println!("registering: channel = {}, id={}", channel, id);
-		
 		let sub_data = SubData{
 			running: RAIIBool::new(false),
 			backlog: VecDeque::new(),
@@ -158,36 +141,29 @@ impl PubSub{
 	where F: FnMut(String) + 'static + Send{
 		self.internal_subscribe(channel, Some(func))
 	}
-	pub fn lazy_subscribe(&self, channel: &str) -> Subscription{
-		let mut func = Some(|_|{});
+	
+	#[allow(unused_assignments)]
+	pub fn lazy_subscribe(&self, channel: &str) -> SubActivator{
+		let mut func = Some(|_|{});//used to give type info to 'func'
 		func = None;
-		self.internal_subscribe(channel, func)
+		SubActivator{
+			sub: self.internal_subscribe(channel, func)
+		}
 	}
-	fn activate<F>(&self, channel: &str, id: u64, func: F) -> Result<(),()>
+	fn activate<F>(&self, channel: &str, id: u64, func: F)
 	where F: FnMut(String) + 'static + Send{
 		let mut inner = self.inner.lock().unwrap();
 		let pool = inner.thread_pool.clone();
-		if let Some(subs) = inner.channels.get_mut(channel){
-			if let Some(sub_data) = subs.get_mut(&id){
-				match sub_data.func{
-					Some(_) => return Err(()),
-					None => {
-						sub_data.func = Some(Arc::new(Mutex::new(Box::new(func))));
-						
-						self.schedule_worker(sub_data, channel, id, &pool);
-						return Ok(())
-					}
-				}
-			}
-		}
-		Err(())
+		let subs = inner.channels.get_mut(channel).unwrap();//channel will always exist
+		let sub_data = subs.get_mut(&id).unwrap();//sub id will always exist
+		sub_data.func = Some(Arc::new(Mutex::new(Box::new(func))));
+		self.schedule_worker(sub_data, channel, id, &pool);
 	}
 	pub fn num_channels(&self) -> usize{
 		let data = self.inner.lock().unwrap();
 		data.channels.len()
 	}
 	fn unregister(&self, sub: &Subscription){
-		println!("unregistering: channel = {}, id={}", sub.channel_id, sub.id);
 		let mut inner = self.inner.lock().unwrap();
 		let mut remove_channel = false;
 		{
@@ -202,14 +178,9 @@ impl PubSub{
 		}
 	}
 	fn schedule_worker(&self, sub_data: &mut SubData, channel: &str, id: u64, pool: &Rc<ThreadPool>){
-		//println!("schedule worker: channel={}, id={}", channel, id);
 		if !sub_data.running.get(){
 			let thread_running = sub_data.running.clone();
-			
-
-			//println!("checking for func");
 			if let Some(func) = sub_data.func.clone(){
-				//println!("got func");
 				thread_running.set(true);
 				let pubsub = self.clone();
 				let channel = channel.to_string();
@@ -222,9 +193,7 @@ impl PubSub{
 					let mut func = guard.deref_mut();
 					let mut running = true;
 					while running{
-						//println!("working loop running");
 						let mut notification_message = None;
-						
 						{
 							let mut inner = pubsub.inner.lock().unwrap();
 							if let Some(subs) = inner.channels.get_mut(&channel){
@@ -235,7 +204,6 @@ impl PubSub{
 								}
 							}
 						}//unlock 'inner'
-						
 						if let Some(msg) = notification_message{
 							func(msg);
 						}else{

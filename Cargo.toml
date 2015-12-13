@@ -1,9 +1,8 @@
 [package]
 
 name = "pubsub"
-version = "0.0.1"
+version = "0.1.0"
 authors = ["Nathan Fuchs <fuchsnj@gmail.com>"]
 
 [dependencies]
-threadpool = "*"
-time = "*"
+threadpool = "0.1.4"
