@@ -13,7 +13,7 @@ This will be uploaded to crates.io when it is more stable.
 For now, add the following to your `Cargo.toml`
 
 ```toml
-[dependencies.aws_dynamodb]
+[dependencies.pubsub]
 git = "https://github.com/fuchsnj/rust_pubsub.git"
 ```
 
@@ -51,6 +51,7 @@ extern crate pubsub;
 	let sub2_activator = pubsub.lazy_subscribe("channel2");
 	
 	//do some initialization here...
+	
 	//notifications received here are queued
 	pubsub.notify("channel2", "data4", None);
 	
