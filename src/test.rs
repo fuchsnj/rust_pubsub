@@ -18,11 +18,11 @@ fn basic_test() {
 			sleep(Duration::from_millis(1000));
 			*count2.lock().unwrap() += 1;
 		});
-		pubsub.notify("channel1", "data1", None);
-		pubsub.notify("channel1", "data2", None);
+		pubsub.notify("channel1", "data1");
+		pubsub.notify("channel1", "data2");
 		
-		pubsub.notify("channel2", "data3", None);
-		pubsub.notify("channel2", "data4", None);
+		pubsub.notify("channel2", "data3");
+		pubsub.notify("channel2", "data4");
 		
 		sleep(Duration::from_millis(500));
 		assert_eq!(*count.lock().unwrap(), 0);
@@ -42,7 +42,7 @@ fn lazy_subscribe(){
 	let count = Arc::new(Mutex::new(0));
 	
 	let sub1_activator = pubsub.lazy_subscribe("channel1");
-	pubsub.notify("channel1", "data1", None);
+	pubsub.notify("channel1", "data1");
 	
 	let count1 = count.clone();
 	let sub1 = sub1_activator.activate(move |msg|{

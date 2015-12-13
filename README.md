@@ -40,10 +40,7 @@ extern crate pubsub;
 
 	//notify all subscribers of "channel1" with message "data1"
 	//This will always return immediately since messages are queued
-	pubsub.notify("channel1", "data1", None);
-	
-	//notify all subscribers of "channel1" except sub1
-	pubsub.notify("channel1", "data2", Some(sub1));
+	pubsub.notify("channel1", "data1");
 	
 	//notify all subscribers of "channel1" except sub1
 	sub1.notify_others("data3");
@@ -55,7 +52,7 @@ extern crate pubsub;
 	//do some initialization here...
 	
 	//notifications received here are queued
-	pubsub.notify("channel2", "data4", None);
+	pubsub.notify("channel2", "data4");
 	
 	//this creates a subscription and processes any messages in the backlog
 	let sub2 = sub2_activator.activate(move |msg|{

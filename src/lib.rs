@@ -26,7 +26,7 @@ impl Subscription{
 	pub fn cancel(self){/* self is dropped */}
 	
 	pub fn notify_others(&self, msg: &str){
-		self.pubsub.notify(&self.channel_id, msg, Some(self.id));
+		self.pubsub.notify_exception(&self.channel_id, msg, Some(self.id));
 	}
 }
 impl Drop for Subscription{
@@ -216,7 +216,10 @@ impl PubSub{
 			}
 		}
 	}
-	pub fn notify(&self, channel: &str, msg: &str, exception: Option<u64>){
+	pub fn notify(&self, channel: &str, msg: &str){
+		self.notify_exception(channel, msg, None)
+	}
+	fn notify_exception(&self, channel: &str, msg: &str, exception: Option<u64>){
 		let mut inner = self.inner.lock().unwrap();
 		let pool = inner.thread_pool.clone();
 		if let Some(subscriptions) = inner.channels.get_mut(channel){
