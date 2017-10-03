@@ -22,7 +22,7 @@ and this to your crate root:
 extern crate pubsub;
 ```
 
-##Quick Start
+## Quick Start
 
 ```rust
 	extern crate pubsub;
